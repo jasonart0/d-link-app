@@ -14,7 +14,7 @@ import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import { colors, spacing } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
-import { predictionService, statsService, trainingService } from '../services';
+import { mt5Service, predictionService, statsService, trainingService } from '../services';
 
 const getValue = (source, keys, fallback = '--') => {
   if (!source) {
@@ -43,12 +43,46 @@ const formatPercent = (value) => {
 
 const normalizeDirection = (value) => String(value || '').toLowerCase().replace(/\s+/g, '-');
 
+const normalizeList = (value) => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value.items)) {
+    return value.items;
+  }
+
+  if (Array.isArray(value.data)) {
+    return value.data;
+  }
+
+  return [];
+};
+
+const getFirstQuote = (quotes) => {
+  const list = normalizeList(quotes);
+  return list[0] || null;
+};
+
+const settleDashboardRequest = async (request) => {
+  try {
+    return await request();
+  } catch {
+    return null;
+  }
+};
+
 export default function Dashboard() {
   const router = useRouter();
   const { isAuthenticated, isRestoring } = useAuth();
   const [latestSignal, setLatestSignal] = useState(null);
   const [trainingStatus, setTrainingStatus] = useState(null);
   const [modelStats, setModelStats] = useState(null);
+  const [mt5Overview, setMt5Overview] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [action, setAction] = useState(null);
@@ -64,15 +98,17 @@ export default function Dashboard() {
     setError(null);
 
     try {
-      const [signalResponse, trainingResponse, statsResponse] = await Promise.all([
-        predictionService.getLatest(),
-        trainingService.getStatus(),
-        statsService.getModelStats(),
+      const [signalResponse, trainingResponse, statsResponse, mt5Response] = await Promise.all([
+        settleDashboardRequest(() => predictionService.getLatest()),
+        settleDashboardRequest(() => trainingService.getStatus()),
+        settleDashboardRequest(() => statsService.getModelStats()),
+        mt5Service.getOverview(),
       ]);
 
       setLatestSignal(signalResponse);
       setTrainingStatus(trainingResponse);
       setModelStats(statsResponse);
+      setMt5Overview(mt5Response);
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load dashboard data.');
     } finally {
@@ -113,7 +149,37 @@ export default function Dashboard() {
     [latestSignal, modelStats, trainingStatus],
   );
 
-  const hasDashboardData = Boolean(latestSignal || trainingStatus || modelStats);
+  const mt5 = useMemo(() => {
+    const account = mt5Overview?.account || {};
+    const status = mt5Overview?.status || {};
+    const quote = getFirstQuote(mt5Overview?.quotes);
+    const positions = normalizeList(mt5Overview?.positions);
+    const orders = normalizeList(mt5Overview?.orders);
+    const connected = getValue(status, ['connected', 'isConnected', 'online'], false);
+
+    return {
+      connected: connected === true || connected === 'true' || connected === 'connected',
+      broker: getValue(account, ['broker', 'company', 'server']),
+      login: getValue(account, ['login', 'account', 'accountNumber']),
+      balance: getValue(account, ['balance']),
+      equity: getValue(account, ['equity']),
+      marginFree: getValue(account, ['margin_free', 'marginFree', 'freeMargin']),
+      symbol: getValue(quote, ['symbol'], 'EURUSD'),
+      bid: getValue(quote, ['bid']),
+      ask: getValue(quote, ['ask']),
+      spread: getValue(quote, ['spread']),
+      positionsCount: positions.length,
+      ordersCount: orders.length,
+      error:
+        status?.error ||
+        account?.error ||
+        mt5Overview?.quotes?.error ||
+        mt5Overview?.positions?.error ||
+        mt5Overview?.orders?.error,
+    };
+  }, [mt5Overview]);
+
+  const hasDashboardData = Boolean(latestSignal || trainingStatus || modelStats || mt5Overview);
 
   const runPrediction = async () => {
     setAction('prediction');
@@ -205,12 +271,29 @@ export default function Dashboard() {
             </View>
 
             <View style={styles.grid}>
+              <InsightTile label="MT5 Connection" value={mt5.connected ? 'Connected' : 'Disconnected'} />
+              <InsightTile label="Broker Server" value={mt5.broker} />
+              <InsightTile label="Account Login" value={mt5.login} />
+              <InsightTile label="Balance / Equity" value={`${mt5.balance} / ${mt5.equity}`} />
+              <InsightTile label="Free Margin" value={mt5.marginFree} />
+              <InsightTile
+                label={`${mt5.symbol} Bid / Ask`}
+                value={`${mt5.bid} / ${mt5.ask}${mt5.spread !== '--' ? ` | Spread ${mt5.spread}` : ''}`}
+              />
+              <InsightTile label="Open Positions" value={mt5.positionsCount} />
+              <InsightTile label="Pending Orders" value={mt5.ordersCount} />
               <InsightTile label="Market Bias" value={summary.marketBias} />
               <InsightTile label="News Sentiment" value={summary.newsSentiment} />
               <InsightTile label="Liquidity Status" value={summary.liquidityStatus} />
               <InsightTile label="Model Status" value={summary.modelStatus} />
               <InsightTile label="Training Status" value={summary.trainingStatus} />
             </View>
+
+            {mt5.error ? (
+              <View style={styles.warningBox}>
+                <Text style={styles.warningText}>MT5 API: {mt5.error}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.actionsPanel}>
               <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -415,6 +498,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: '800',
+  },
+  warningBox: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 190, 92, 0.5)',
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 190, 92, 0.1)',
+    padding: spacing.md,
+  },
+  warningText: {
+    color: '#ffbe5c',
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 20,
   },
   actionsPanel: {
     gap: spacing.md,

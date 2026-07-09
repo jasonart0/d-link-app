@@ -1,12 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import apiClient from '../services/apiClient';
-import authService from '../services/authService';
 import authStorage from '../services/authStorage';
 
 const AuthContext = createContext(null);
 
-const getLoginErrorMessage = (error) =>
-  error?.message || 'Unable to sign in. Check your connection and try again.';
+const localSession = {
+  token: 'local-dashboard-session',
+  user: {
+    email: 'demo@d-line.local',
+    name: 'Demo User',
+  },
+};
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
@@ -48,32 +52,20 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const signIn = useCallback(async ({ email, password }) => {
+  const signIn = useCallback(async () => {
     setIsSigningIn(true);
     setError(null);
 
     try {
-      const response = await authService.login({ email, password });
-      const nextToken = response?.token;
+      await authStorage.saveSession(localSession);
+      apiClient.setAuthToken(localSession.token);
+      setToken(localSession.token);
+      setUser(localSession.user);
 
-      if (!nextToken) {
-        throw new Error('Login succeeded but no token was returned.');
-      }
-
-      await authStorage.saveSession({
-        token: nextToken,
-        user: response.user,
-      });
-
-      apiClient.setAuthToken(nextToken);
-      setToken(nextToken);
-      setUser(response.user ?? null);
-
-      return response;
-    } catch (loginError) {
-      const message = getLoginErrorMessage(loginError);
-      setError(message);
-      throw loginError;
+      return localSession;
+    } catch (sessionError) {
+      setError('Unable to start local dashboard session.');
+      throw sessionError;
     } finally {
       setIsSigningIn(false);
     }

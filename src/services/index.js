@@ -2,6 +2,7 @@ export { default as apiClient, ApiError, API_UNAVAILABLE_MESSAGE } from './apiCl
 export { default as authService } from './authService';
 export { default as authStorage } from './authStorage';
 export { default as marketService } from './marketService';
+export { default as mt5Service } from './mt5Service';
 export { default as newsService } from './newsService';
 export { default as predictionService } from './predictionService';
 export { default as riskService } from './riskService';

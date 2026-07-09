@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,52 +16,22 @@ import { colors, spacing } from '../constants/theme';
 export default function Login() {
   const router = useRouter();
   const { signIn, isSigningIn, error, clearError } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [touched, setTouched] = useState(false);
-
-  const validation = useMemo(() => {
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail) {
-      return 'Email is required.';
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      return 'Enter a valid email address.';
-    }
-
-    if (!password) {
-      return 'Password is required.';
-    }
-
-    if (password.length < 6) {
-      return 'Password must be at least 6 characters.';
-    }
-
-    return null;
-  }, [email, password]);
-
-  const visibleError = (touched && validation) || error;
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const handleLogin = async () => {
-    setTouched(true);
     clearError();
-
-    if (validation) {
-      return;
-    }
+    setIsNavigating(true);
 
     try {
-      await signIn({
-        email: email.trim(),
-        password,
-      });
+      await signIn();
       router.replace('/dashboard');
     } catch {
       // The auth context exposes a clean user-facing error message.
+      setIsNavigating(false);
     }
   };
+
+  const isSubmitting = isSigningIn || isNavigating;
 
   return (
     <KeyboardAvoidingView
@@ -86,19 +56,14 @@ export default function Login() {
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect={false}
-            editable={!isSigningIn}
+            editable={false}
             keyboardType="email-address"
-            onChangeText={(value) => {
-              setEmail(value);
-              clearError();
-            }}
             onSubmitEditing={handleLogin}
-            placeholder="user@example.com"
+            placeholder="Login disabled"
             placeholderTextColor={colors.textMuted}
             returnKeyType="next"
             style={styles.input}
             textContentType="emailAddress"
-            value={email}
           />
         </View>
 
@@ -106,37 +71,32 @@ export default function Login() {
           <Text style={styles.label}>Password</Text>
           <TextInput
             autoCapitalize="none"
-            editable={!isSigningIn}
-            onChangeText={(value) => {
-              setPassword(value);
-              clearError();
-            }}
+            editable={false}
             onSubmitEditing={handleLogin}
-            placeholder="password"
+            placeholder="Login disabled"
             placeholderTextColor={colors.textMuted}
             returnKeyType="go"
             secureTextEntry
             style={styles.input}
             textContentType="password"
-            value={password}
           />
         </View>
 
-        {visibleError ? (
+        {error ? (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{visibleError}</Text>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
 
         <Pressable
-          disabled={isSigningIn}
+          disabled={isSubmitting}
           onPress={handleLogin}
           style={({ pressed }) => [
             styles.submitButton,
-            (pressed || isSigningIn) && styles.submitButtonPressed,
+            (pressed || isSubmitting) && styles.submitButtonPressed,
           ]}
         >
-          {isSigningIn ? (
+          {isSubmitting ? (
             <ActivityIndicator color={colors.background} />
           ) : (
             <Text style={styles.submitText}>Sign in</Text>
