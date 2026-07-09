@@ -1,7 +1,41 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { colors } from '../constants/theme';
 
 export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <AuthNavigation />
+    </AuthProvider>
+  );
+}
+
+function AuthNavigation() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { isAuthenticated, isRestoring } = useAuth();
+
+  useEffect(() => {
+    if (isRestoring) {
+      return;
+    }
+
+    if (!isAuthenticated && pathname !== '/') {
+      router.replace('/');
+      return;
+    }
+
+    if (isAuthenticated && pathname === '/') {
+      router.replace('/dashboard');
+    }
+  }, [isAuthenticated, isRestoring, pathname, router]);
+
+  if (isRestoring) {
+    return <SessionLoadingScreen />;
+  }
+
   return (
     <Stack
       screenOptions={{
@@ -25,3 +59,27 @@ export default function RootLayout() {
     </Stack>
   );
 }
+
+function SessionLoadingScreen() {
+  return (
+    <View style={styles.loadingScreen}>
+      <ActivityIndicator color={colors.neonBlue} size="large" />
+      <Text style={styles.loadingText}>Securing session</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  loadingText: {
+    marginTop: 14,
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});
